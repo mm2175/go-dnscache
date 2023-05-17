@@ -43,15 +43,23 @@ func DialFunc(resolver *Resolver, baseDialFunc dialFunc) dialFunc {
 		// ctxLookup is only used for cancelling DNS Lookup.
 		ctxLookup, cancelF := context.WithTimeout(ctx, resolver.lookupTimeout)
 		defer cancelF()
+
+		beforeFetch := time.Now()
 		ips, err := resolver.Fetch(ctxLookup, h)
 		if err != nil {
 			return nil, err
 		}
+		afterFetch := time.Now()
 
 		var firstErr error
 		for _, randomIndex := range randPerm(len(ips)) {
-			conn, err := baseDialFunc(ctx, "tcp", net.JoinHostPort(ips[randomIndex].String(), p))
+			ip := ips[randomIndex].String()
+			conn, err := baseDialFunc(ctx, "tcp", net.JoinHostPort(ip, p))
 			if err == nil {
+				if logDns && resolver.logger != nil {
+					resolver.logger.Debug("dial with dns cache success", "addr", addr, "ip", ip,
+						"resolve_takes", afterFetch.Sub(beforeFetch), "dial_takes", time.Since(afterFetch))
+				}
 				return conn, nil
 			}
 			if firstErr == nil {
